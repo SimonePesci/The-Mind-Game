@@ -12,7 +12,9 @@ func main() {
 
 	router := gin.Default()
 
-	router.GET("/ws", handlers.HandleWebSocket)
+	router.GET("/ws", func(c *gin.Context) {
+		handlers.HandleWebSocket(c, logger)
+	})
 
 	port := ":8080"
 	logger.Infof("Starting server on port %s", port)

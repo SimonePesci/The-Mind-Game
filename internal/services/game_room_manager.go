@@ -54,20 +54,20 @@ func (m *GameRoomManager) AddPlayer(player *models.Player) *models.GameRoom {
 	// For simplicity, assign to the first available room that isn't full
 	for _, room := range m.gameRooms {
 		if len(room.Players) < 4 {
-			room.mu.Lock()
+			room.Mu.Lock()
 			room.Players[player.ID] = player
 			player.RoomID = room.ID
-			room.mu.Unlock()
+			room.Mu.Unlock()
 			return room
 		}
 	}
 
 	// If no available room, create a new one
 	newRoom := m.CreateGameRoom()
-	newRoom.mu.Lock()
+	newRoom.Mu.Lock()
 	newRoom.Players[player.ID] = player
 	player.RoomID = newRoom.ID
-	newRoom.mu.Unlock()
+	newRoom.Mu.Unlock()
 	return newRoom
 }
 
@@ -77,17 +77,17 @@ func (m *GameRoomManager) RemovePlayer(playerID string) {
 	defer m.mu.Unlock()
 
 	for _, room := range m.gameRooms {
-		room.mu.Lock()
+		room.Mu.Lock()
 		if _, exists := room.Players[playerID]; exists {
 			delete(room.Players, playerID)
-			room.mu.Unlock()
+			room.Mu.Unlock()
 			// if the room is empty, we can delete the room
 			if len(room.Players) == 0 {
 				delete(m.gameRooms, room.ID)
 			}
 			return
 		}
-		room.mu.Unlock()
+		room.Mu.Unlock()
 	}
 }
 
@@ -107,8 +107,8 @@ func initializeDeck() []int {
 
 // HandlePlayCard processes a player's card play action
 func (m *GameRoomManager) HandlePlayCard(room *models.GameRoom, payload models.PlayCardPayload) {
-	room.mu.Lock()
-	defer room.mu.Unlock()
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
 
 	player, exists := room.Players[payload.PlayerID]
 	if !exists {
@@ -132,8 +132,8 @@ func (m *GameRoomManager) HandlePlayCard(room *models.GameRoom, payload models.P
 
 // HandleDiscardCard processes a player's card discard action
 func (m *GameRoomManager) HandleDiscardCard(room *models.GameRoom, payload models.DiscardCardPayload) {
-	room.mu.Lock()
-	defer room.mu.Unlock()
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
 
 	player, exists := room.Players[payload.PlayerID]
 	if !exists {

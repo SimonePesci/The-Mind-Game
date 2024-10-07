@@ -10,5 +10,6 @@ type GameRoom struct {
 	Lives        int
 	Shurikens    int
 
-	mu sync.Mutex // Mutex to protect concurrent access
+	Mu sync.Mutex // Mutex to protect concurrent access
+
 }
