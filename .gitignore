@@ -1,0 +1,13 @@
+# Binaries
+/bin/
+/cmd/server/main
+
+# Dependencies
+/vendor/
+*.log
+
+# OS Files
+.DS_Store
+
+# Editor Files
+.vscode/
