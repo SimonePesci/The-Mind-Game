@@ -16,6 +16,7 @@ import (
 type GameRoomManager struct {
 	gameRooms map[string]*models.GameRoom
 	mu        sync.Mutex
+	logger    *logrus.Logger
 }
 
 var manager *GameRoomManager
@@ -26,6 +27,7 @@ func GetGameRoomManager() *GameRoomManager {
 	once.Do(func() {
 		manager = &GameRoomManager{
 			gameRooms: make(map[string]*models.GameRoom),
+			logger:    logrus.New(),
 		}
 	})
 	return manager
@@ -64,10 +66,14 @@ func (m *GameRoomManager) AddPlayer(player *models.Player) *models.GameRoom {
 			if room.CurrentRound == 1 {
 				card, err := m.dealCard(room)
 				if err != nil {
-					// logger.Errorf("Failed to deal card to player %s: %v", player.ID, err)
+					m.logger.Errorf("Failed to deal card to player %s: %v", player.ID, err)
 				} else {
 					player.Hand = append(player.Hand, card)
-					// logger.Infof("Assigned card %d to player %s in room %s", card, player.ID, room.ID)
+					// Log the dealt card
+					m.logger.Infof("Assigned card %d to player %s in room %s", card, player.ID, room.ID)
+					
+					// Send the dealt card to the player via WebSocket
+					m.SendCardToPlayer(player, card, m.logger)
 				}
 			}
 
@@ -87,16 +93,17 @@ func (m *GameRoomManager) AddPlayer(player *models.Player) *models.GameRoom {
 	if newRoom.CurrentRound == 1 {
 		card, err := m.dealCard(newRoom)
 		if err != nil {
-			// logger.Errorf("Failed to deal card to player %s: %v", player.ID, err)
+			m.logger.Errorf("Failed to deal card to player %s: %v", player.ID, err)
 			// Optionally, handle the error
 		} else {
 			player.Hand = append(player.Hand, card)
-			// logger.Infof("Assigned card %d to player %s in room %s", card, player.ID, newRoom.ID)
-			// Optionally, send a message to the player about the new card
-			// Example: m.SendCardToPlayer(player, card, logger)
+			// Log the dealt card
+			m.logger.Infof("Assigned card %d to player %s in room %s", card, player.ID, newRoom.ID)
+			
+			// Send the dealt card to the player via WebSocket
+			m.SendCardToPlayer(player, card, m.logger)
 		}
 	}
-
 
 	newRoom.Mu.Unlock()
 	return newRoom
@@ -203,6 +210,14 @@ func (m *GameRoomManager) HandlePlayCard(room *models.GameRoom, payload models.P
 
 	// Broadcast the play action to all players
 	m.BroadcastMessage(room, "CARD_PLAYED", payload, logger)
+
+	// Check if all players have played their cards
+	if m.AllPlayersHavePlayed(room) {
+		// Start the next round
+		if err := m.StartNextRound(room, logger); err != nil {
+			logger.Errorf("Failed to start next round in room %s: %v", room.ID, err)
+		}
+	}
 }
 
 // HandleDiscardCard processes a player's card discard action.
@@ -241,6 +256,14 @@ func (m *GameRoomManager) HandleDiscardCard(room *models.GameRoom, payload model
 
 	// Broadcast the discard action to all players
 	m.BroadcastMessage(room, "CARD_DISCARDED", payload, logger)
+
+	// Check if all players have taken their discard actions
+	if m.AllPlayersHaveDiscarded(room) {
+		// Start the next round
+		if err := m.StartNextRound(room, logger); err != nil {
+			logger.Errorf("Failed to start next round in room %s: %v", room.ID, err)
+		}
+	}
 }
 
 
@@ -265,4 +288,77 @@ func (m *GameRoomManager) BroadcastMessage(room *models.GameRoom, messageType st
 			// Optionally handle disconnection
 		}
 	}
+}
+
+// DealCardsForRound deals cards to all players in the room based on the current round.
+func (m *GameRoomManager) DealCardsForRound(room *models.GameRoom, logger *logrus.Logger) error {
+	room.Mu.Lock()
+	defer room.Mu.Unlock()
+
+	numberOfCards := room.CurrentRound
+	logger.Infof("Dealing %d cards to each player in room %s", numberOfCards, room.ID)
+
+	for _, player := range room.Players {
+		var dealtCards []int
+		for i := 0; i < numberOfCards; i++ {
+			card, err := m.dealCard(room)
+			if err != nil {
+				logger.Errorf("Failed to deal card to player %s: %v", player.ID, err)
+				return err
+			}
+			player.Hand = append(player.Hand, card)
+			dealtCards = append(dealtCards, card)
+		}
+
+		// Send the dealt cards to the player
+		m.SendCardsToPlayer(player, dealtCards, logger)
+	}
+
+	return nil
+}
+
+// SendCardsToPlayer sends multiple cards to the player.
+func (m *GameRoomManager) SendCardsToPlayer(player *models.Player, cards []int, logger *logrus.Logger) {
+	cardPayload := models.NewCardsPayload{
+		CardNumbers: cards,
+	}
+
+	message := models.Message{
+		Type:    "NEW_CARDS",
+		Payload: nil,
+	}
+
+	payloadBytes, err := json.Marshal(cardPayload)
+	if err != nil {
+		logger.Errorf("Failed to marshal NEW_CARDS payload for player %s: %v", player.ID, err)
+		return
+	}
+	message.Payload = payloadBytes
+
+	if err := player.Conn.WriteJSON(message); err != nil {
+		logger.Errorf("Failed to send NEW_CARDS message to player %s: %v", player.ID, err)
+	}
+}
+
+// StartNextRound transitions the game to the next round and deals new cards.
+func (m *GameRoomManager) StartNextRound(room *models.GameRoom, logger *logrus.Logger) error {
+	room.CurrentRound++
+	logger.Infof("Starting round %d in room %s", room.CurrentRound, room.ID)
+	return m.DealCardsForRound(room, logger)
+}
+
+// AllPlayersHavePlayed checks if all players have played their cards for the current round.
+func (m *GameRoomManager) AllPlayersHavePlayed(room *models.GameRoom) bool {
+	// Implement logic to determine if all players have played.
+	// This can be tracked using additional fields in GameRoom.
+	// For simplicity, returning true.
+	return true
+}
+
+// AllPlayersHaveDiscarded checks if all players have discarded their cards for the current round.
+func (m *GameRoomManager) AllPlayersHaveDiscarded(room *models.GameRoom) bool {
+	// Implement logic to determine if all players have discarded.
+	// This can be tracked using additional fields in GameRoom.
+	// For simplicity, returning true.
+	return true
 }

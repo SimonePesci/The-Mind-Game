@@ -34,6 +34,13 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request, logger *logrus.Logg
 	gameRoom := manager.AddPlayer(player)
 	logger.Infof("Player %s connected to room %s", player.ID, gameRoom.ID)
 
+	// If this is the first player in the room, start the first round
+	if len(gameRoom.Players) == 1 {
+		if err := manager.DealCardsForRound(gameRoom, logger); err != nil {
+			logger.Errorf("Failed to deal initial cards in room %s: %v", gameRoom.ID, err)
+		}
+	}
+
 	// Send a welcome message to the player
 	welcomePayload := models.WelcomePayload{
 		Message:  "Welcome to The Mind!",
