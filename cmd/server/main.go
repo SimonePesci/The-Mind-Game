@@ -7,13 +7,16 @@ import (
 )
 
 func main() {
-
+	// Initialize Logger
 	logger := utils.NewLogger()
+	logger.Info("Logger initialized")
 
+	// Initialize Gin router
 	router := gin.Default()
 
+	// Set up the WebSocket endpoint
 	router.GET("/ws", func(c *gin.Context) {
-		handlers.HandleWebSocket(c, logger)
+		handlers.HandleWebSocket(c.Writer, c.Request, logger)
 	})
 
 	port := ":8080"

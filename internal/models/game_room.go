@@ -2,6 +2,7 @@ package models
 
 import "sync"
 
+// GameRoom represents a game room.
 type GameRoom struct {
 	ID           string
 	Players      map[string]*Player
@@ -9,7 +10,5 @@ type GameRoom struct {
 	CurrentRound int
 	Lives        int
 	Shurikens    int
-
-	Mu sync.Mutex // Mutex to protect concurrent access
-
+	Mu           sync.Mutex // Mutex to protect concurrent access
 }
