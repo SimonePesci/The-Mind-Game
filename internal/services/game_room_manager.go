@@ -213,6 +213,9 @@ func (m *GameRoomManager) HandlePlayCard(room *models.GameRoom, payload models.P
 
 	// Check if all players have played their cards
 	if m.AllPlayersHavePlayed(room) {
+
+		// TODO: Implement logic to determine if the cards played are valid
+
 		// Start the next round
 		if err := m.StartNextRound(room, logger); err != nil {
 			logger.Errorf("Failed to start next round in room %s: %v", room.ID, err)
@@ -352,6 +355,13 @@ func (m *GameRoomManager) AllPlayersHavePlayed(room *models.GameRoom) bool {
 	// Implement logic to determine if all players have played.
 	// This can be tracked using additional fields in GameRoom.
 	// For simplicity, returning true.
+
+	for _, player := range room.Players {
+		if len(player.Hand) > 0 {
+			return false
+		}
+	}
+
 	return true
 }
 
