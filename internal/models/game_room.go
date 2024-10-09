@@ -10,5 +10,6 @@ type GameRoom struct {
 	CurrentRound int
 	Lives        int
 	Shurikens    int
+	RoundCards   []int
 	Mu           sync.Mutex // Mutex to protect concurrent access
 }

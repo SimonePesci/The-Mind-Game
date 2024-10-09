@@ -45,6 +45,7 @@ func (m *GameRoomManager) CreateGameRoom() *models.GameRoom {
 		CurrentRound: 1,
 		Lives:        3,
 		Shurikens:    1,
+		RoundCards:   make([]int, 0),
 	}
 
 	m.gameRooms[roomID] = gameRoom
@@ -183,7 +184,7 @@ func (m *GameRoomManager) SendCardToPlayer(player *models.Player, card int, logg
 // HandlePlayCard processes a player's card play action.
 func (m *GameRoomManager) HandlePlayCard(room *models.GameRoom, payload models.PlayCardPayload, logger *logrus.Logger) {
 	room.Mu.Lock()
-	defer room.Mu.Unlock()
+	
 
 	player, exists := room.Players[payload.PlayerID]
 	if !exists {
@@ -206,10 +207,37 @@ func (m *GameRoomManager) HandlePlayCard(room *models.GameRoom, payload models.P
 		return
 	}
 
-	// TODO: Implement game logic to check if the card played is valid
+	// Add the card to the round cards
+	room.RoundCards = append(room.RoundCards, payload.CardNumber)
 
+	
 	// Broadcast the play action to all players
 	m.BroadcastMessage(room, "CARD_PLAYED", payload, logger)
+	
+	// Validate the sequence of played cards
+	position, wrongCard := m.ValidateCardsPlayed(room)
+	if position != -1 {
+		room.Lives--
+		logger.Infof("Player %s played wrong card %d at position %d. Lives left: %d", payload.PlayerID, wrongCard, position, room.Lives)
+
+		// Notify all players about the wrong card
+		wrongCardPayload := models.WrongCardPayload{
+			PlayerID:   payload.PlayerID,
+			CardNumber: wrongCard,
+			Position:   position,
+			LivesLeft:  room.Lives,
+		}
+		m.BroadcastMessage(room, "WRONG_CARD", wrongCardPayload, logger)
+
+		if room.Lives < 0 {
+			logger.Infof("Game Over in room %s. All lives lost.", room.ID)
+			// Handle game over logic here
+			return
+		}
+
+	}
+
+	room.Mu.Unlock()
 
 	// Check if all players have played their cards
 	if m.AllPlayersHavePlayed(room) {
@@ -295,29 +323,44 @@ func (m *GameRoomManager) BroadcastMessage(room *models.GameRoom, messageType st
 
 // DealCardsForRound deals cards to all players in the room based on the current round.
 func (m *GameRoomManager) DealCardsForRound(room *models.GameRoom, logger *logrus.Logger) error {
-	room.Mu.Lock()
-	defer room.Mu.Unlock()
+	logger.Infof("Entering DealCardsForRound for room %s", room.ID)
 
-	numberOfCards := room.CurrentRound
-	logger.Infof("Dealing %d cards to each player in room %s", numberOfCards, room.ID)
+    room.Mu.Lock()
+    defer room.Mu.Unlock()
 
-	for _, player := range room.Players {
-		var dealtCards []int
-		for i := 0; i < numberOfCards; i++ {
-			card, err := m.dealCard(room)
-			if err != nil {
-				logger.Errorf("Failed to deal card to player %s: %v", player.ID, err)
-				return err
-			}
-			player.Hand = append(player.Hand, card)
-			dealtCards = append(dealtCards, card)
-		}
+    numberOfCards := room.CurrentRound
+    logger.Infof("Dealing %d cards to each player in room %s", numberOfCards, room.ID)
 
-		// Send the dealt cards to the player
-		m.SendCardsToPlayer(player, dealtCards, logger)
-	}
+    // Log the number of players
+    numPlayers := len(room.Players)
+    logger.Infof("Number of players in room %s: %d", room.ID, numPlayers)
 
-	return nil
+    if numPlayers == 0 {
+        logger.Warnf("No players found in room %s. Skipping card dealing.", room.ID)
+        return fmt.Errorf("no players in room %s", room.ID)
+    }
+
+    for _, player := range room.Players {
+        logger.Infof("Dealing cards to player %s in room %s", player.ID, room.ID)
+        var dealtCards []int
+        for i := 0; i < numberOfCards; i++ {
+            card, err := m.dealCard(room)
+            if err != nil {
+                logger.Errorf("Failed to deal card to player %s: %v", player.ID, err)
+                return err
+            }
+            player.Hand = append(player.Hand, card)
+            dealtCards = append(dealtCards, card)
+            logger.Infof("Dealt card %d to player %s in room %s", card, player.ID, room.ID)
+        }
+
+        // Send the dealt cards to the player
+        m.SendCardsToPlayer(player, dealtCards, logger)
+        logger.Infof("Sent %d new cards to player %s in room %s", numberOfCards, player.ID, room.ID)
+    }
+
+    logger.Infof("Completed DealCardsForRound for room %s", room.ID)
+    return nil
 }
 
 // SendCardsToPlayer sends multiple cards to the player.
@@ -345,9 +388,24 @@ func (m *GameRoomManager) SendCardsToPlayer(player *models.Player, cards []int, 
 
 // StartNextRound transitions the game to the next round and deals new cards.
 func (m *GameRoomManager) StartNextRound(room *models.GameRoom, logger *logrus.Logger) error {
-	room.CurrentRound++
-	logger.Infof("Starting round %d in room %s", room.CurrentRound, room.ID)
-	return m.DealCardsForRound(room, logger)
+	logger.Infof("Entering StartNextRound for room %s", room.ID)
+
+    room.CurrentRound++
+    logger.Infof("Incremented to round %d in room %s", room.CurrentRound, room.ID)
+
+    // Reset RoundCards for the new round
+    room.RoundCards = make([]int, 0)
+    logger.Infof("RoundCards reset for room %s", room.ID)
+
+    // Call DealCardsForRound and log the result
+    err := m.DealCardsForRound(room, logger)
+    if err != nil {
+        logger.Errorf("DealCardsForRound failed for room %s: %v", room.ID, err)
+        return err
+    }
+
+    logger.Infof("Successfully started round %d in room %s", room.CurrentRound, room.ID)
+    return nil
 }
 
 // AllPlayersHavePlayed checks if all players have played their cards for the current round.
@@ -371,4 +429,18 @@ func (m *GameRoomManager) AllPlayersHaveDiscarded(room *models.GameRoom) bool {
 	// This can be tracked using additional fields in GameRoom.
 	// For simplicity, returning true.
 	return true
+}
+
+// ValidateCardsPlayed validates the cards played in the current round.
+// It returns the position and value of the first wrong card if invalid, otherwise returns -1 and 0.
+func (m *GameRoomManager) ValidateCardsPlayed(room *models.GameRoom) (int, int) {
+	currentCard := 0
+	for idx, card := range room.RoundCards {
+		if card > currentCard {
+			currentCard = card
+		} else {
+			return idx, card
+		}
+	}
+	return -1, 0
 }
