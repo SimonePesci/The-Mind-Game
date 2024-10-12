@@ -203,6 +203,7 @@ func (m *GameRoomManager) HandlePlayCard(room *models.GameRoom, payload models.P
 		}
 	}
 	if !hasCard {
+		room.Mu.Unlock()
 		logger.Errorf("Player %s does not have card %d", payload.PlayerID, payload.CardNumber)
 		return
 	}

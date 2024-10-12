@@ -1,0 +1,15 @@
+Explanation:
+
+components/: Contains all React components.
+GameBoard.tsx: Displays the cards played in the current round.
+PlayerHand.tsx: Displays the player's hand and controls to play or discard cards.
+PlayerList.tsx: Displays a list of players in the room.
+context/: Holds context providers.
+WebSocketContext.tsx: Manages the WebSocket connection and provides it via React Context.
+hooks/: Contains custom hooks.
+useWebSocket.ts: Custom hook to handle WebSocket logic and game state.
+types/: Defines TypeScript interfaces and types for the application.
+index.ts: Exports all the types used throughout the application.
+App.tsx: The main application component.
+index.tsx: Entry point of the React application.
+react-app-env.d.ts: Auto-generated TypeScript definitions.
